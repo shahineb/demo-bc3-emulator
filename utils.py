@@ -104,18 +104,18 @@ nn = HealPIXUNet(
 )
 nn = eqx.tree_deserialise_leaves("cache/ckpt.eqx", nn)
 
-@jax.jit
-def compiled_nn(x, t):
-    return nn(x, t)
-x = jnp.zeros((5, 96, 192))
-_ = compiled_nn(x, jnp.zeros((1,)))
+# @jax.jit
+# def compiled_nn(x, t):
+#     return nn(x, t)
+# x = jnp.zeros((5, 96, 192))
+# _ = compiled_nn(x, jnp.zeros((1,)))
 
 schedule = ContinuousVESchedule(0.01, σmax)
 
 
 def make_emulator(n_steps=30):
     emulator_from_pattern = partial(draw_samples_single,
-                                    model=compiled_nn,
+                                    model=nn,
                                     schedule=schedule,
                                     n_samples=1,
                                     μ=μ_train,
@@ -131,15 +131,16 @@ def make_emulator(n_steps=30):
     return emulator
 
 
-# ds = xr.Dataset(
-#     {
-#         var: (('member', 'lat', 'lon'), samples[:, i, :, :])
-#         for i, var in enumerate(varnames)
-#     },
-#     coords={
-#         'member': jnp.arange(n_samples) + 1,
-#         'lat': lat,
-#         'lon': lon,
-#     }
-# )
-# return ds
+def wrap_as_xarray(samples):
+    ds = xr.Dataset(
+        {
+            var: (('member', 'lat', 'lon'), samples[:, i, :, :])
+            for i, var in enumerate(varnames)
+        },
+        coords={
+            'member': jnp.arange(len(samples)) + 1,
+            'lat': lat,
+            'lon': lon,
+        }
+    )
+    return ds
