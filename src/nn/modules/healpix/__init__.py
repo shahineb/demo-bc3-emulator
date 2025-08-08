@@ -1,8 +1,3 @@
-from .pool import (
-    HealPIXPool,
-    HealPIXUnpool
-)
-
 from .conv import (
     HealPIXConv,
     HealPIXConvTranspose,
