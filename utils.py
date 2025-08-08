@@ -54,27 +54,12 @@ def create_sampler(model: eqx.Module, schedule: Any, pattern: jnp.ndarray,
 
 @eqx.filter_jit
 def draw_samples_single(model: eqx.Module, schedule: Any, pattern: jnp.ndarray,
-                        n_samples: int, n_steps: int, μ: jnp.ndarray, σ: jnp.ndarray,
+                        n_steps: int, μ: jnp.ndarray, σ: jnp.ndarray,
                         key: jr.PRNGKey = jr.PRNGKey(0)) -> jnp.ndarray:
     """Draw samples for a given pattern."""
     sampler = create_sampler(model, schedule, pattern, μ, σ)
-    samples = sampler.sample(n_samples, steps=n_steps, key=key)
+    samples = sampler.sample(steps=n_steps, key=key)
     return denormalize(samples, μ[:-1], σ[:-1])
-
-@eqx.filter_jit
-def draw_samples_batch(model: eqx.Module, schedule: Any, pattern_batch: jnp.ndarray,
-                      n_samples: int, n_steps: int, μ: jnp.ndarray,
-                      σ: jnp.ndarray, key: jr.PRNGKey = jr.PRNGKey(0)) -> jnp.ndarray:
-    """Draw samples for a batch of patterns."""
-    keys = jr.split(key, pattern_batch.shape[0])
-    Γ = partial(draw_samples_single,
-                model=model,
-                schedule=schedule,
-                n_samples=n_samples,
-                n_steps=n_steps, μ=μ, σ=σ)
-    return jax.vmap(Γ)(pattern=pattern_batch, key=keys)
-
-
 
 
 ################################################################################
@@ -104,11 +89,6 @@ nn = HealPIXUNet(
 )
 nn = eqx.tree_deserialise_leaves("cache/ckpt.eqx", nn)
 
-# @jax.jit
-# def compiled_nn(x, t):
-#     return nn(x, t)
-# x = jnp.zeros((5, 96, 192))
-# _ = compiled_nn(x, jnp.zeros((1,)))
 
 schedule = ContinuousVESchedule(0.01, σmax)
 
@@ -117,11 +97,10 @@ def make_emulator(n_steps=30):
     emulator_from_pattern = partial(draw_samples_single,
                                     model=nn,
                                     schedule=schedule,
-                                    n_samples=1,
                                     μ=μ_train,
                                     σ=σ_train)
     # dry run to compile the function
-    _ = emulator_from_pattern(pattern=jnp.zeros((96, 192)), n_steps=n_steps, n_samples=1, key=jr.PRNGKey(0))
+    _ = emulator_from_pattern(pattern=jnp.zeros((96, 192)), n_steps=n_steps, key=jr.PRNGKey(0))
     def emulator(ΔT, month, seed):
         pattern = β[month - 1, :, 1] * ΔT + β[month - 1, :, 0]
         pattern = pattern.reshape((96, 192))
