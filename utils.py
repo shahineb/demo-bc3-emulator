@@ -132,6 +132,7 @@ def make_emulator(n_steps=30):
 
 
 def wrap_as_xarray(samples):
+    samples = jnp.concatenate(samples)
     ds = xr.Dataset(
         {
             var: (('member', 'lat', 'lon'), samples[:, i, :, :])
