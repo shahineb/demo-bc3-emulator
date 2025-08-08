@@ -103,7 +103,6 @@ nn = HealPIXUNet(
     edges_to_latlon=to_latlon
 )
 nn = eqx.tree_deserialise_leaves("cache/ckpt.eqx", nn)
-compiled_nn = jax.jit(nn)
 
 schedule = ContinuousVESchedule(0.01, σmax)
 
