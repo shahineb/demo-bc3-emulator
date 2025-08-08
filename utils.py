@@ -112,31 +112,34 @@ _ = compiled_nn(x, jnp.zeros((1,)))
 
 schedule = ContinuousVESchedule(0.01, σmax)
 
-emulator_from_pattern = partial(draw_samples_single,
-                                model=compiled_nn,
-                                schedule=schedule,
-                                μ=μ_train,
-                                σ=σ_train)
-
-dummy_pattern = jnp.zeros((96, 192))
-samples = emulator_from_pattern(pattern=dummy_pattern, n_steps=30, n_samples=1, key=jr.PRNGKey(0))
 
 def make_emulator(n_steps=30):
-    def emulator(ΔT, month, n_samples, seed):
+    emulator_from_pattern = partial(draw_samples_single,
+                                    model=compiled_nn,
+                                    schedule=schedule,
+                                    n_samples=1,
+                                    μ=μ_train,
+                                    σ=σ_train)
+    # dry run to compile the function
+    _ = emulator_from_pattern(pattern=jnp.zeros((96, 192)), n_steps=n_steps, n_samples=1, key=jr.PRNGKey(0))
+    def emulator(ΔT, month, seed):
         pattern = β[month - 1, :, 1] * ΔT + β[month - 1, :, 0]
         pattern = pattern.reshape((96, 192))
         key = jr.PRNGKey(seed)
-        samples = emulator_from_pattern(pattern=pattern, n_steps=n_steps, n_samples=n_samples, key=key)
-        ds = xr.Dataset(
-            {
-                var: (('member', 'lat', 'lon'), samples[:, i, :, :])
-                for i, var in enumerate(varnames)
-            },
-            coords={
-                'member': jnp.arange(n_samples) + 1,
-                'lat': lat,
-                'lon': lon,
-            }
-        )
-        return ds
+        samples = emulator_from_pattern(pattern=pattern, n_steps=n_steps, key=key)
+        return samples
     return emulator
+
+
+# ds = xr.Dataset(
+#     {
+#         var: (('member', 'lat', 'lon'), samples[:, i, :, :])
+#         for i, var in enumerate(varnames)
+#     },
+#     coords={
+#         'member': jnp.arange(n_samples) + 1,
+#         'lat': lat,
+#         'lon': lon,
+#     }
+# )
+# return ds
