@@ -103,11 +103,12 @@ nn = HealPIXUNet(
     edges_to_latlon=to_latlon
 )
 nn = eqx.tree_deserialise_leaves("cache/ckpt.eqx", nn)
+compiled_nn = jax.jit(nn)
 
 schedule = ContinuousVESchedule(0.01, σmax)
 
 emulator_from_pattern = partial(draw_samples_single,
-                                model=nn,
+                                model=compiled_nn,
                                 schedule=schedule,
                                 μ=μ_train,
                                 σ=σ_train)
