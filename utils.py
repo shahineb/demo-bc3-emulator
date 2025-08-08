@@ -107,7 +107,7 @@ nn = eqx.tree_deserialise_leaves("cache/ckpt.eqx", nn)
 schedule = ContinuousVESchedule(0.01, σmax)
 
 emulator_from_pattern = partial(draw_samples_single,
-                                model=compiled_nn,
+                                model=nn,
                                 schedule=schedule,
                                 μ=μ_train,
                                 σ=σ_train)
