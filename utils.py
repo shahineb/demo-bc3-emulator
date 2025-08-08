@@ -118,6 +118,9 @@ emulator_from_pattern = partial(draw_samples_single,
                                 μ=μ_train,
                                 σ=σ_train)
 
+dummy_pattern = jnp.zeros((96, 192))
+samples = emulator_from_pattern(pattern=dummy_pattern, n_steps=30, n_samples=1, key=jr.PRNGKey(0))
+
 def make_emulator(n_steps=30):
     def emulator(ΔT, month, n_samples, seed):
         pattern = β[month - 1, :, 1] * ΔT + β[month - 1, :, 0]
