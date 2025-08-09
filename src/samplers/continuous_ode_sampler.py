@@ -7,7 +7,7 @@ import jax.random as jr
 import diffrax as dfx
 
 
-class ContinuousHeunSampler:
+class ContinuousEulerSampler:
     def __init__(self, schedule, model, data_shape):
         @eqx.filter_jit
         def denoiser_precursor(model, data_shape, x, σ):
@@ -38,7 +38,7 @@ class ContinuousHeunSampler:
         f = dfx.ODETerm(drift_diffrax_signature)
         solversteps = dfx.StepTo(timesteps)
         sol = dfx.diffeqsolve(terms=f,
-                              solver=dfx.Heun(),
+                              solver=dfx.Euler(),
                               t0=jnp.max(timesteps),
                               t1=jnp.min(timesteps),
                               stepsize_controller=solversteps,
@@ -49,7 +49,7 @@ class ContinuousHeunSampler:
     @eqx.filter_jit
     def sample(self, N, key=jr.PRNGKey(0), steps=300):
         keys = jax.random.split(key, N)
-        x0 = jr.normal(keys[0], (N, math.prod(self.data_shape))) * self.schedule.σmax
+        x0 = jr.normal(keys[0], (N, math.prod(self.data_shape)), dtype=jnp.float16) * self.schedule.σmax
         reverse_timesteps = self.schedule.get_timesteps(steps)[::-1]
         sampler = ft.partial(self.precursor_solver, reverse_timesteps)
         samples = jax.vmap(sampler)(x0)

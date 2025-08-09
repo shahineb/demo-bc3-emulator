@@ -1,3 +1,3 @@
-from .continuous_ode_sampler import ContinuousHeunSampler
+from .continuous_ode_sampler import ContinuousEulerSampler
 
-__all__ = ["ContinuousHeunSampler"]
+__all__ = ["ContinuousEulerSampler"]

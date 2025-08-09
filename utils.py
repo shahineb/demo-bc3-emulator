@@ -7,7 +7,7 @@ import equinox as eqx
 import xarray as xr
 from src.nn import HealPIXUNet
 from src.schedules import ContinuousVESchedule
-from src.samplers import ContinuousHeunSampler
+from src.samplers import ContinuousEulerSampler
 
 
 
@@ -44,13 +44,13 @@ def process_batch(batch: Tuple, μ: jnp.ndarray, σ: jnp.ndarray) -> jnp.ndarray
 ################################################################################
 
 def create_sampler(model: eqx.Module, schedule: Any, pattern: jnp.ndarray,
-                   μ: jnp.ndarray, σ: jnp.ndarray) -> ContinuousHeunSampler:
+                   μ: jnp.ndarray, σ: jnp.ndarray) -> ContinuousEulerSampler:
     """Create a sampler for a given pattern."""
     context = normalize(pattern, μ[-1], σ[-1])[None, ...]
     def model_with_context(x, t):
         x = jnp.concatenate((x, context), axis=0)
         return model(x, t)
-    return ContinuousHeunSampler(schedule, model_with_context, (4, 96, 192))
+    return ContinuousEulerSampler(schedule, model_with_context, (4, 96, 192))
 
 @eqx.filter_jit
 def draw_samples_single(model: eqx.Module, schedule: Any, pattern: jnp.ndarray,
