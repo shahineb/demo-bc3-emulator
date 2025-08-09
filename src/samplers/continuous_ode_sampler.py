@@ -47,9 +47,11 @@ class ContinuousHeunSampler:
         return sol.ys
 
     @eqx.filter_jit
-    def sample(self, key=jr.PRNGKey(0), steps=30):
-        x0 = jr.normal(key, (math.prod(self.data_shape),)) * self.schedule.σmax
+    def sample(self, N, key=jr.PRNGKey(0), steps=300):
+        keys = jax.random.split(key, N)
+        x0 = jr.normal(keys[0], (N, math.prod(self.data_shape))) * self.schedule.σmax
         reverse_timesteps = self.schedule.get_timesteps(steps)[::-1]
-        sample = self.precursor_solver(reverse_timesteps, x0)
-        sample = jnp.reshape(sample, self.data_shape)
-        return sample
+        sampler = ft.partial(self.precursor_solver, reverse_timesteps)
+        samples = jax.vmap(sampler)(x0)
+        samples = jnp.reshape(samples, (N, *self.data_shape))
+        return samples

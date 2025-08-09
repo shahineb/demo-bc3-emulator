@@ -54,11 +54,11 @@ def create_sampler(model: eqx.Module, schedule: Any, pattern: jnp.ndarray,
 
 @eqx.filter_jit
 def draw_samples_single(model: eqx.Module, schedule: Any, pattern: jnp.ndarray,
-                        n_steps: int, μ: jnp.ndarray, σ: jnp.ndarray,
+                        n_samples: int, n_steps: int, μ: jnp.ndarray, σ: jnp.ndarray,
                         key: jr.PRNGKey = jr.PRNGKey(0)) -> jnp.ndarray:
     """Draw samples for a given pattern."""
     sampler = create_sampler(model, schedule, pattern, μ, σ)
-    samples = sampler.sample(steps=n_steps, key=key)
+    samples = sampler.sample(N=n_samples, steps=n_steps, key=key)
     return denormalize(samples, μ[:-1], σ[:-1])
 
 
@@ -89,29 +89,30 @@ nn = HealPIXUNet(
 )
 nn = eqx.tree_deserialise_leaves("cache/ckpt.eqx", nn)
 
-
 schedule = ContinuousVESchedule(0.01, σmax)
 
 
-def make_emulator(n_steps=30):
+def make_emulator(n_samples=5, n_steps=30):
     emulator_from_pattern = partial(draw_samples_single,
                                     model=nn,
                                     schedule=schedule,
+                                    n_samples=n_samples,
+                                    n_steps=n_steps,
                                     μ=μ_train,
                                     σ=σ_train)
     # dry run to compile the function
-    _ = emulator_from_pattern(pattern=jnp.zeros((96, 192)), n_steps=n_steps, key=jr.PRNGKey(0))
+    _ = emulator_from_pattern(pattern=jnp.zeros((96, 192)), key=jr.PRNGKey(0))
     def emulator(ΔT, month, seed):
         pattern = β[month - 1, :, 1] * ΔT + β[month - 1, :, 0]
         pattern = pattern.reshape((96, 192))
         key = jr.PRNGKey(seed)
-        samples = emulator_from_pattern(pattern=pattern, n_steps=n_steps, key=key)
+        samples = emulator_from_pattern(pattern=pattern, key=key)
         return samples
     return emulator
 
 
 def wrap_as_xarray(samples):
-    samples = jnp.stack(samples)
+    samples = jnp.concat(samples)
     ds = xr.Dataset(
         {
             var: (('member', 'lat', 'lon'), samples[:, i, :, :])
