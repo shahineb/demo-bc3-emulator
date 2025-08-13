@@ -74,9 +74,6 @@ def draw_samples_single(model: eqx.Module, schedule: Any, pattern: jnp.ndarray,
 # Script to define the climateScenario class for handling emissions scenarios
 # From https://github.com/kranke-git/em2gmst/tree/main
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 
 class climateScenario:
     
@@ -114,6 +111,8 @@ class climateScenario:
             return self._load_pulseCO2()
         elif name == 'abrupt-4xco2':
             return self._load_abrupt4xCO2()
+        elif name.startswith("cmip7_"):
+            return self._load_cmip7scenario()
         else:
             raise ValueError(f"Unknown preset '{name}'")
     
@@ -167,7 +166,30 @@ class climateScenario:
         # Set emission flag to be false for SSP scenarios
         self.flagEmissions = False
         return( merged.loc[ syear:eyear ]['Catm'] )
-        
+    
+    def _load_cmip7scenario( self ):
+        """Load CMIP7 Emissions data from the big CSV file."""
+        filename = self.datadir + '/cmip7_extensions_1750-2500.csv'
+        # Read in the data and subset for the correct scenario and CO2 only
+        df             = pd.read_csv( filename, index_col = 0 )
+        dfCO2          = df[ ( ( df['variable'] == 'CO2 AFOLU' ) | ( df['variable'] == 'CO2 FFI' ) ) ]
+        scen_name_file = self.name.replace( 'cmip7_', '', 1 )
+        if scen_name_file not in dfCO2.index:
+            raise ValueError(f"Unknown CMIP7 scenario '{self.name}'. Valid options are: {', '.join( dfCO2.index.unique() ) }" )
+        else:
+            dfscen         = dfCO2[ dfCO2.index == scen_name_file ]
+        # Convert to a DataFrame with 'year' as index
+        numeric_data   = dfscen.drop( columns=['region', 'variable', 'ar6_gwp_mass_adjusted', 'unit'] )
+        sum_by_year    = numeric_data.sum( axis=0 )
+        df_sum           = sum_by_year.reset_index()
+        df_sum.columns   = ['year', 'total_GtCO2']
+        df_sum[ 'year' ] = ( df_sum[ 'year' ].astype( float ) - 0.5).astype( int )
+        df_sum['ppmCO2'] = df_sum['total_GtCO2'] / 2.12 * 12/44  # Convert GtCO2 to ppm for the carbon cycle model
+        df_sum.set_index( 'year', inplace=True )
+        # These are emission driven scenarios, so we set the flag accordingly
+        self.flagEmissions = True
+        return df_sum
+
         
     def integrate( self, dt = 0.1 ):
         """
@@ -333,38 +355,115 @@ class climateScenario:
         This function plots the output of the climate scenario, including CO2 concentration, emissions, radiative forcing, and GMST.
         """
         df = self.outdf
+        df = df.loc[df.index <= 2150]
+        df = df.loc[df.index >= 1850]
+        def set_three_ticks(ax, values, selected):
+            vmin, vmax = np.ceil(np.min(values)), np.floor(np.max(values))
+            ticks = sorted({vmin, selected, vmax})
+            ax.set_yticks(ticks)
+            ax.set_yticklabels([f"{t:.0f}" if t.is_integer() else f"{t:.1f}" for t in ticks])
+
         
         if self.flagEmissions:
         
-            fig, axes = plt.subplots( 1, 3, figsize = ( 15, 5 ), sharex = True )
+            fig, axes = plt.subplots( 1, 3, figsize = (15, 3.5), sharex=True)
 
             # --- Panel 1 ---
-            ax1 = axes[ 0 ]
+            ax1 = axes[0]
             ax2 = ax1.twinx()
-
-            ax1.plot(df.index, df["Catm"], color="tab:blue"); ax1.set_ylabel("CO₂ Concentration (ppm)", color="tab:blue"); ax1.tick_params(axis="y", labelcolor="tab:blue")
-            ax2.plot(df.index, df["emissionsGtC"], color = "tab:red" ); ax2.set_ylabel("Emissions (GtC)", color="tab:red");ax2.tick_params(axis="y", labelcolor="tab:red")
+            ax1.plot(df.index, df["Catm"], color="tab:blue")
+            ax1.set_ylabel("CO₂ Concentration (ppm)", color="tab:blue")
+            ax1.tick_params(axis="y", labelcolor="tab:blue")
+            ax1.grid( True, which='both', linestyle='--', alpha=0.0)
+            ax2.plot(df.index, df["emissionsGtC"], color = "tab:red" )
+            ax2.set_ylabel("Emissions (GtC)", color="tab:red")
+            ax2.tick_params(axis="y", labelcolor="tab:red")
             ax1.set_title("CO₂ Emissions vs Concentrations")
+            if year:
+                y_emissions = df.loc[year, "emissionsGtC"]
+                y_catm = df.loc[year, "Catm"]
+
+                ax1.plot(year, y_catm, marker="o", ms=6, color="tab:blue")
+                ax1.plot([year, year], [ax1.get_ylim()[0], y_catm],
+                        linestyle=":", alpha=0.6, linewidth=1, color="k")
+                ax1.plot([ax1.get_xlim()[0], year], [y_catm, y_catm],
+                         linestyle=":", alpha=0.6, linewidth=1, color="tab:blue")
+                set_three_ticks(ax1, df["Catm"], y_catm)
+
+                ax2.plot(year, y_emissions, marker="o", ms=6, color="tab:red")
+                ax2.plot([year, year], [ax2.get_ylim()[0], y_emissions],
+                        linestyle=":", alpha=0.6, linewidth=1, color="k")
+                ax2.plot([year, ax1.get_xlim()[-1]], [y_emissions, y_emissions],
+                         linestyle=":", alpha=0.6, linewidth=1, color="tab:red")
+                set_three_ticks(ax2, df["emissionsGtC"], y_emissions)
 
             # --- Panel 2 ---
             ax1 = axes[1]
             ax2 = ax1.twinx()
 
-            ax1.plot(df.index, df["Catm"], color="tab:blue"); ax1.set_ylabel("CO₂ Concentration (ppm)", color="tab:blue"); ax1.tick_params(axis="y", labelcolor="tab:blue")
-            ax2.plot(df.index, df["RF"], color="tab:green"); ax2.set_ylabel("Effective Radiative Forcing (W m⁻²)", color="tab:green");  ax2.tick_params(axis="y", labelcolor="tab:green")
+            ax1.plot(df.index, df["Catm"], color="tab:blue")
+            ax1.set_ylabel("CO₂ Concentration (ppm)", color="tab:blue")
+            ax1.tick_params(axis="y", labelcolor="tab:blue")
+            ax1.grid( True, which='both', linestyle='--', alpha=0.0)  # Grid on left axis
+            ax2.plot(df.index, df["RF"], color="tab:green")
+            ax2.set_ylabel("Effective Radiative Forcing (W m⁻²)", color="tab:green")
+            ax2.tick_params(axis="y", labelcolor="tab:green")
             ax1.set_title("CO₂ concentrations vs Radiative Forcing")
+            if year:
+                y_catm = df.loc[year, "Catm"]
+                y_rf   = df.loc[year, "RF"]
+
+                ax1.plot(year, y_catm, marker="o", ms=6, color="tab:blue")
+                ax1.plot([year, year], [ax1.get_ylim()[0], y_catm],
+                        linestyle=":", alpha=0.6, linewidth=1, color="k")
+                ax1.plot([ax1.get_xlim()[0], year], [y_catm, y_catm],
+                         linestyle=":", alpha=0.6, linewidth=1, color="tab:blue")
+                set_three_ticks(ax1, df["Catm"], y_catm)
+                
+                ax2.plot(year, y_rf, marker="o", ms=6, color="tab:green")
+                ax2.plot([year, year], [ax2.get_ylim()[0], y_rf],
+                        linestyle=":", alpha=0.6, linewidth=1, color="k")
+                ax2.plot([year, ax1.get_xlim()[-1]], [y_rf, y_rf],
+                         linestyle=":", alpha=0.6, linewidth=1, color="tab:green")
+                set_three_ticks(ax2, df["RF"], y_rf)
+                
 
             # --- Panel 3 ---
             ax1 = axes[2]
             ax2 = ax1.twinx()
-            ax1.plot( df.index, df['cumulativeEmissionsGtC'], color="tab:purple" ); ax1.set_ylabel("Cumulative Emissions (GtC)", color="tab:purple"); ax1.tick_params(axis="y", labelcolor="tab:purple")
-            ax2.plot( df.index, df["GMST"], color="tab:orange"); ax2.set_ylabel("Temp Anomaly (K)", color="tab:orange"); ax2.tick_params(axis="y", labelcolor="tab:orange")
+            ax1.plot( df.index, df['cumulativeEmissionsGtC'], color="tab:purple" )
+            ax1.set_ylabel("Cumulative Emissions (GtC)", color="tab:purple")
+            ax1.tick_params(axis="y", labelcolor="tab:purple")
+            ax1.grid( True, which='both', linestyle='--', alpha=0.0)  # Grid on left axis
+            ax2.plot( df.index, df["GMST"], color="tab:orange")
+            ax2.set_ylabel("Temp Anomaly (K)", color="tab:orange")
+            ax2.tick_params(axis="y", labelcolor="tab:orange")
             ax1.set_title("Cumulative Emissions vs GMST response")
+            if year:
+                y_cumulative_emissions = df.loc[year, "cumulativeEmissionsGtC"]
+                y_gmst = df.loc[year, "GMST"]
 
-            # Shared X-axis label
+                ax1.plot(year, y_cumulative_emissions, marker="o", ms=6, color="tab:purple")
+                ax1.plot([year, year], [ax1.get_ylim()[0], y_cumulative_emissions],
+                        linestyle=":", alpha=0.6, linewidth=1, color="k")
+                ax1.plot([ax1.get_xlim()[0], year], [y_cumulative_emissions, y_cumulative_emissions],
+                         linestyle=":", alpha=0.6, linewidth=1, color="tab:purple")
+                set_three_ticks(ax1, df["cumulativeEmissionsGtC"], y_cumulative_emissions)
+
+                ax2.plot(year, y_gmst, marker="o", ms=6, color="tab:orange")
+                ax2.plot([year, year], [ax2.get_ylim()[0], y_gmst],
+                        linestyle=":", alpha=0.6, linewidth=1, color="k")
+                ax2.plot([year, ax1.get_xlim()[-1]], [y_gmst, y_gmst],
+                         linestyle=":", alpha=0.6, linewidth=1, color="tab:orange")
+                set_three_ticks(ax2, df["GMST"], y_gmst)
+
+            xmin, xmax = min(df.index), max(df.index)
+            xticks = sorted({xmin, year, xmax})
             for ax in axes:
-                ax.set_xlabel("Year")
-
+                ax.set_xticks(xticks)
+                ax.set_xticklabels(ax.get_xticks(), rotation=45)
+                ax.set_xlim(1850, 2150)
+                ax.margins(x=0, y=0)
             plt.tight_layout()
             
         else:
@@ -415,13 +514,6 @@ class climateScenario:
                             linestyle=":", alpha=0.6, linewidth=1, color="k")
                 axes[1].plot([axes[1].get_xlim()[0], year], [y_gmst, y_gmst],
                             linestyle=":", alpha=0.6, linewidth=1, color="tab:orange")
-
-
-                def set_three_ticks(ax, values, selected):
-                    vmin = int(np.ceil(np.min(values)))
-                    vmax = int(np.floor(np.max(values)))
-                    ticks = sorted({vmin, selected, vmax})
-                    ax.set_yticks(ticks)
 
                 # X-axis ticks: min, year, max
                 xmin, xmax = min(df.index), max(df.index)
