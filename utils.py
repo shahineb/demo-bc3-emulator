@@ -565,7 +565,13 @@ nn = eqx.tree_deserialise_leaves("cache/ckpt.eqx", nn)
 schedule = ContinuousVESchedule(0.01, σmax)
 
 
-def make_emulator(n_samples=5, n_steps=30):
+fidelity_levels = {"low": {"n_samples": 1, "n_steps": 10},
+                   "medium": {"n_samples": 1, "n_steps": 20},
+                   "high": {"n_samples": 1, "n_steps": 50}}
+
+def make_emulator(fidelity="medium"):
+    n_samples = fidelity_levels[fidelity]['n_samples']
+    n_steps = fidelity_levels[fidelity]['n_steps']
     emulator_from_pattern = partial(draw_samples_single,
                                     model=nn,
                                     schedule=schedule,
